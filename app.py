@@ -4,7 +4,7 @@ import json
 
 app = Flask(__name__)
 app.secret_key = 'secret_key'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///quiz_system.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///quiz.db'
 db = SQLAlchemy(app)
 
 
@@ -31,6 +31,10 @@ class Quiz(db.Model):
     name = db.Column(db.String(80), nullable=False, unique=True)
     teacher_id = db.Column(db.Integer, db.ForeignKey('teacher.id'),
                            nullable=False)
+
+    def __init__(self, name, teacher_id):
+        self.name = name
+        self.teacher_id = teacher_id
 
 
 class Question(db.Model):
@@ -273,10 +277,16 @@ def delete_quiz(quiz_id):
 
 
 @app.route("/edit_quiz/<quiz_id>", methods=['GET', 'POST'])
-def edit_quiz(quiz_id):
+@app.route("/edit_quiz", methods=['GET', 'POST'])
+def edit_quiz(quiz_id=None):
     if 'username' in session:
         questions = get_questions(quiz_id)
-        return render_template('edit_quiz.html', questions=json.loads(questions))
+        if questions == '[]':
+            questions = {'questions': None, 'quiz_id': quiz_id}
+            return render_template('edit_quiz.html', questions=questions)
+        else:
+            questions = {'questions': json.loads(questions), 'quiz_id': quiz_id}
+            return render_template('edit_quiz.html', questions=questions)
     else:
         return "Login Please"
 
@@ -326,16 +336,32 @@ def update_question():
     question.option_c = option_c
     question.option_d = option_d
     db.session.commit()
-    return redirect(url_for("edit_quiz", id=question.quiz_id))
+    return redirect(url_for("edit_quiz", quiz_id=question.quiz_id))
 
 
-@app.route("/delete_question/<quiz_id>", methods=['POST', 'GET'])
-def delete_question(quiz_id):
-    question = Question.query.filter_by(id=quiz_id).first()
-    question_id = question.quiz_id
+@app.route("/delete_question/<question_id>/<quiz_id>", methods=['POST', 'GET'])
+def delete_question(question_id, quiz_id):
+    question = Question.query.filter_by(id=question_id).first()
     db.session.delete(question)
     db.session.commit()
-    return redirect(url_for("edit_quiz", id=question_id))
+    return redirect(url_for("edit_quiz", quiz_id=quiz_id))
+
+
+@app.route("/add_question", methods=['POST'])
+def add_question():
+    statement = request.form['statement']
+    option_a = request.form['option_1']
+    option_b = request.form['option_2']
+    option_c = request.form['option_3']
+    option_d = request.form['option_4']
+    correct_answer = request.form["correct_answer"]
+    quiz_id = request.form['quiz_id']
+    question = Question(statement=statement, option_a=option_a, option_b=option_b,
+                        option_c=option_c, option_d=option_d, correct_ans=correct_answer,
+                        quiz_id=quiz_id)
+    db.session.add(question)
+    db.session.commit()
+    return "Success"
 
 
 @app.route("/insert_teacher", methods=['POST'])
@@ -345,6 +371,7 @@ def insert_teacher():
     teacher = Teacher.query.filter_by(username=name).first()
     if teacher is None:
         teacher = Teacher(username=name, password=password)
+        db.session.add(teacher)
         db.session.add(teacher)
         db.session.commit()
         return redirect(url_for("admin"))
